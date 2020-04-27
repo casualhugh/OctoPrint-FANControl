@@ -3,12 +3,12 @@ import setuptools
 
 ########################################################################################################################
 
-plugin_identifier = "fancontrol"
+plugin_identifier = "Fancontrol"
 plugin_package = "octoprint_%s" % plugin_identifier
 plugin_name = "OctoPrint-fanControl"
 plugin_version = "0.1.9"
-plugin_description = "Control ATX/AUX power supply."
-plugin_author = "Shawn Bruce"
+plugin_description = "Control the Fan"
+plugin_author = "Hugh Ebeling"
 plugin_author_email = "kantlivelong@gmail.com"
 plugin_url = "https://github.com/casualhugh/OctoPrint-FANControl"
 plugin_license = "AGPLv3"
