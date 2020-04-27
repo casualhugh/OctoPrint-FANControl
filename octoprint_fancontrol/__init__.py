@@ -67,7 +67,7 @@ except:
                 self.on_reset()
 
 
-class PSUControl(octoprint.plugin.StartupPlugin,
+class fanControl(octoprint.plugin.StartupPlugin,
                    octoprint.plugin.TemplatePlugin,
                    octoprint.plugin.AssetPlugin,
                    octoprint.plugin.SettingsPlugin,
@@ -113,10 +113,10 @@ class PSUControl(octoprint.plugin.StartupPlugin,
         self.invertsenseGPIOPin = False
         self.senseGPIOPinPUD = ''
         self.senseSystemCommand = ''
-        self.isPSUOn = False
-        self._noSensing_isPSUOn = False
-        self._check_psu_state_thread = None
-        self._check_psu_state_event= threading.Event()
+        self.isfanOn = False
+        self._noSensing_isfanOn = False
+        self._check_fan_state_thread = None
+        self._check_fan_state_event= threading.Event()
         self._idleTimer = None
         self._waitForHeaters = False
         self._skipIdleTimer = False
@@ -216,18 +216,18 @@ class PSUControl(octoprint.plugin.StartupPlugin,
             self._logger.info("Using System Commands for On/Off")
             
         if self.sensingMethod == 'INTERNAL':
-            self._logger.info("Using internal tracking for PSU on/off state.")
+            self._logger.info("Using internal tracking for fan on/off state.")
         elif self.sensingMethod == 'GPIO':
-            self._logger.info("Using GPIO for tracking PSU on/off state.")
+            self._logger.info("Using GPIO for tracking fan on/off state.")
         elif self.sensingMethod == 'SYSTEM':
-            self._logger.info("Using System Commands for tracking PSU on/off state.")
+            self._logger.info("Using System Commands for tracking fan on/off state.")
             
         if self.switchingMethod == 'GPIO' or self.sensingMethod == 'GPIO':
             self._configure_gpio()
 
-        self._check_psu_state_thread = threading.Thread(target=self._check_psu_state)
-        self._check_psu_state_thread.daemon = True
-        self._check_psu_state_thread.start()
+        self._check_fan_state_thread = threading.Thread(target=self._check_fan_state)
+        self._check_fan_state_thread.daemon = True
+        self._check_fan_state_thread.start()
 
         self._start_idle_timer()
 
@@ -289,7 +289,7 @@ class PSUControl(octoprint.plugin.StartupPlugin,
                 return
         
         if self.sensingMethod == 'GPIO':
-            self._logger.info("Using GPIO sensing to determine PSU on/off state.")
+            self._logger.info("Using GPIO sensing to determine fan on/off state.")
             self._logger.info("Configuring GPIO for pin %s" % self.senseGPIOPin)
 
             if self.senseGPIOPinPUD == 'PULL_UP':
@@ -318,18 +318,18 @@ class PSUControl(octoprint.plugin.StartupPlugin,
             except (RuntimeError, ValueError) as e:
                 self._logger.error(e)
 
-    def check_psu_state(self):
-        self._check_psu_state_event.set()
+    def check_fan_state(self):
+        self._check_fan_state_event.set()
 
-    def _check_psu_state(self):
+    def _check_fan_state(self):
         while True:
-            old_isPSUOn = self.isPSUOn
+            old_isfanOn = self.isfanOn
 
             if self.sensingMethod == 'GPIO':
                 if not self._hasGPIO:
                     return
 
-                self._logger.debug("Polling PSU state...")
+                self._logger.debug("Polling fan state...")
 
                 r = 0
                 try:
@@ -339,16 +339,16 @@ class PSUControl(octoprint.plugin.StartupPlugin,
                 self._logger.debug("Result: %s" % r)
 
                 if r==1:
-                    new_isPSUOn = True
+                    new_isfanOn = True
                 elif r==0:
-                    new_isPSUOn = False
+                    new_isfanOn = False
 
                 if self.invertsenseGPIOPin:
-                    new_isPSUOn = not new_isPSUOn
+                    new_isfanOn = not new_isfanOn
 
-                self.isPSUOn = new_isPSUOn
+                self.isfanOn = new_isfanOn
             elif self.sensingMethod == 'SYSTEM':
-                new_isPSUOn = False
+                new_isfanOn = False
 
                 p = subprocess.Popen(self.senseSystemCommand, shell=True)
                 self._logger.debug("Sensing system command executed. PID=%s, Command=%s" % (p.pid, self.senseSystemCommand))
@@ -358,32 +358,32 @@ class PSUControl(octoprint.plugin.StartupPlugin,
                 self._logger.debug("Sensing system command returned: %s" % r)
 
                 if r==0:
-                    new_isPSUOn = True
+                    new_isfanOn = True
                 elif r==1:
-                    new_isPSUOn = False
+                    new_isfanOn = False
 
-                self.isPSUOn = new_isPSUOn
+                self.isfanOn = new_isfanOn
             elif self.sensingMethod == 'INTERNAL':
-                self.isPSUOn = self._noSensing_isPSUOn
+                self.isfanOn = self._noSensing_isfanOn
             else:
                 return
             
-            self._logger.debug("isPSUOn: %s" % self.isPSUOn)
+            self._logger.debug("isfanOn: %s" % self.isfanOn)
 
-            if (old_isPSUOn != self.isPSUOn) and self.isPSUOn:
+            if (old_isfanOn != self.isfanOn) and self.isfanOn:
                 self._start_idle_timer()
-            elif (old_isPSUOn != self.isPSUOn) and not self.isPSUOn:
+            elif (old_isfanOn != self.isfanOn) and not self.isfanOn:
                 self._stop_idle_timer()
 
-            self._plugin_manager.send_plugin_message(self._identifier, dict(hasGPIO=self._hasGPIO, isPSUOn=self.isPSUOn))
+            self._plugin_manager.send_plugin_message(self._identifier, dict(hasGPIO=self._hasGPIO, isfanOn=self.isfanOn))
 
-            self._check_psu_state_event.wait(self.sensePollingInterval)
-            self._check_psu_state_event.clear()
+            self._check_fan_state_event.wait(self.sensePollingInterval)
+            self._check_fan_state_event.clear()
 
     def _start_idle_timer(self):
         self._stop_idle_timer()
         
-        if self.powerOffWhenIdle and self.isPSUOn:
+        if self.powerOffWhenIdle and self.isfanOn:
             self._idleTimer = ResettableTimer(self.idleTimeout * 60, self._idle_poweroff)
             self._idleTimer.start()
 
@@ -411,12 +411,12 @@ class PSUControl(octoprint.plugin.StartupPlugin,
         if self._printer.is_printing() or self._printer.is_paused():
             return
 
-        self._logger.info("Idle timeout reached after %s minute(s). Turning heaters off prior to shutting off PSU." % self.idleTimeout)
+        self._logger.info("Idle timeout reached after %s minute(s). Turning heaters off prior to shutting off fan." % self.idleTimeout)
         if self._wait_for_heaters():
             self._logger.info("Heaters below temperature.")
-            self.turn_psu_off()
+            self.turn_fan_off()
         else:
-            self._logger.info("Aborted PSU shut down due to activity.")
+            self._logger.info("Aborted fan shut down due to activity.")
 
     def _wait_for_heaters(self):
         self._waitForHeaters = True
@@ -476,7 +476,7 @@ class PSUControl(octoprint.plugin.StartupPlugin,
                 self._waitForHeaters = False
                 return True
             
-            self._logger.info("Waiting for heaters(%s) before shutting off PSU..." % ', '.join(heaters_above_waittemp))
+            self._logger.info("Waiting for heaters(%s) before shutting off fan..." % ', '.join(heaters_above_waittemp))
             time.sleep(5)
 
     def hook_gcode_queuing(self, comm_instance, phase, cmd, cmd_type, gcode, *args, **kwargs):
@@ -485,19 +485,19 @@ class PSUControl(octoprint.plugin.StartupPlugin,
         if gcode:
             if self.enablePseudoOnOff:
                 if gcode == self.pseudoOnGCodeCommand:
-                    self.turn_psu_on()
-                    comm_instance._log("PSUControl: ok")
+                    self.turn_fan_on()
+                    comm_instance._log("fanControl: ok")
                     skipQueuing = True
                 elif gcode == self.pseudoOffGCodeCommand:
-                    self.turn_psu_off()
-                    comm_instance._log("PSUControl: ok")
+                    self.turn_fan_off()
+                    comm_instance._log("fanControl: ok")
                     skipQueuing = True
 
-            if (not self.isPSUOn and self.autoOn and (gcode in self._autoOnTriggerGCodeCommandsArray)):
-                self._logger.info("Auto-On - Turning PSU On (Triggered by %s)" % gcode)
-                self.turn_psu_on()
+            if (not self.isfanOn and self.autoOn and (gcode in self._autoOnTriggerGCodeCommandsArray)):
+                self._logger.info("Auto-On - Turning fan On (Triggered by %s)" % gcode)
+                self.turn_fan_on()
 
-            if self.powerOffWhenIdle and self.isPSUOn and not self._skipIdleTimer:
+            if self.powerOffWhenIdle and self.isfanOn and not self._skipIdleTimer:
                 if not (gcode in self._idleIgnoreCommandsArray):
                     self._waitForHeaters = False
                     self._reset_idle_timer()
@@ -505,14 +505,14 @@ class PSUControl(octoprint.plugin.StartupPlugin,
             if skipQueuing:
                 return (None,)
 
-    def turn_psu_on(self):
+    def turn_fan_on(self):
         if self.switchingMethod == 'GCODE' or self.switchingMethod == 'GPIO' or self.switchingMethod == 'SYSTEM':
-            self._logger.info("Switching PSU On")
+            self._logger.info("Switching fan On")
             if self.switchingMethod == 'GCODE':
-                self._logger.debug("Switching PSU On Using GCODE: %s" % self.onGCodeCommand)
+                self._logger.debug("Switching fan On Using GCODE: %s" % self.onGCodeCommand)
                 self._printer.commands(self.onGCodeCommand)
             elif self.switchingMethod == 'SYSTEM':
-                self._logger.debug("Switching PSU On Using SYSTEM: %s" % self.onSysCommand)
+                self._logger.debug("Switching fan On Using SYSTEM: %s" % self.onSysCommand)
 
                 p = subprocess.Popen(self.onSysCommand, shell=True)
                 self._logger.debug("On system command executed. PID=%s, Command=%s" % (p.pid, self.onSysCommand))
@@ -525,7 +525,7 @@ class PSUControl(octoprint.plugin.StartupPlugin,
                 if not self._hasGPIO:
                     return
 
-                self._logger.debug("Switching PSU On Using GPIO: %s" % self.onoffGPIOPin)
+                self._logger.debug("Switching fan On Using GPIO: %s" % self.onoffGPIOPin)
                 if not self.invertonoffGPIOPin:
                     pin_output=GPIO.HIGH
                 else:
@@ -537,19 +537,19 @@ class PSUControl(octoprint.plugin.StartupPlugin,
                     self._logger.error(e)
 
             if self.sensingMethod not in ('GPIO','SYSTEM'):
-                self._noSensing_isPSUOn = True
+                self._noSensing_isfanOn = True
          
             time.sleep(0.1 + self.postOnDelay)
-            self.check_psu_state()
+            self.check_fan_state()
         
-    def turn_psu_off(self):
+    def turn_fan_off(self):
         if self.switchingMethod == 'GCODE' or self.switchingMethod == 'GPIO' or self.switchingMethod == 'SYSTEM':
-            self._logger.info("Switching PSU Off")
+            self._logger.info("Switching fan Off")
             if self.switchingMethod == 'GCODE':
-                self._logger.debug("Switching PSU Off Using GCODE: %s" % self.offGCodeCommand)
+                self._logger.debug("Switching fan Off Using GCODE: %s" % self.offGCodeCommand)
                 self._printer.commands(self.offGCodeCommand)
             elif self.switchingMethod == 'SYSTEM':
-                self._logger.debug("Switching PSU Off Using SYSTEM: %s" % self.offSysCommand)
+                self._logger.debug("Switching fan Off Using SYSTEM: %s" % self.offSysCommand)
 
                 p = subprocess.Popen(self.offSysCommand, shell=True)
                 self._logger.debug("Off system command executed. PID=%s, Command=%s" % (p.pid, self.offSysCommand))
@@ -562,7 +562,7 @@ class PSUControl(octoprint.plugin.StartupPlugin,
                 if not self._hasGPIO:
                     return
 
-                self._logger.debug("Switching PSU Off Using GPIO: %s" % self.onoffGPIOPin)
+                self._logger.debug("Switching fan Off Using GPIO: %s" % self.onoffGPIOPin)
                 if not self.invertonoffGPIOPin:
                     pin_output=GPIO.LOW
                 else:
@@ -577,37 +577,37 @@ class PSUControl(octoprint.plugin.StartupPlugin,
                 self._printer.disconnect()
                 
             if self.sensingMethod not in ('GPIO','SYSTEM'):
-                self._noSensing_isPSUOn = False
+                self._noSensing_isfanOn = False
                         
             time.sleep(0.1)
-            self.check_psu_state()
+            self.check_fan_state()
 
     def get_api_commands(self):
         return dict(
-            turnPSUOn=[],
-            turnPSUOff=[],
-            togglePSU=[],
-            getPSUState=[]
+            turnfanOn=[],
+            turnfanOff=[],
+            togglefan=[],
+            getfanState=[]
         )
 
     def on_api_get(self, request):
-        return self.on_api_command("getPSUState", [])
+        return self.on_api_command("getfanState", [])
 
     def on_api_command(self, command, data):
         if not user_permission.can():
             return make_response("Insufficient rights", 403)
         
-        if command == 'turnPSUOn':
-            self.turn_psu_on()
-        elif command == 'turnPSUOff':
-            self.turn_psu_off()
-        elif command == 'togglePSU':
-            if self.isPSUOn:
-                self.turn_psu_off()
+        if command == 'turnfanOn':
+            self.turn_fan_on()
+        elif command == 'turnfanOff':
+            self.turn_fan_off()
+        elif command == 'togglefan':
+            if self.isfanOn:
+                self.turn_fan_off()
             else:
-                self.turn_psu_on()
-        elif command == 'getPSUState':
-            return jsonify(isPSUOn=self.isPSUOn)
+                self.turn_fan_on()
+        elif command == 'getfanState':
+            return jsonify(isfanOn=self.isfanOn)
 
     def get_settings_defaults(self):
         return dict(
@@ -745,35 +745,35 @@ class PSUControl(octoprint.plugin.StartupPlugin,
 
     def get_assets(self):
         return {
-            "js": ["js/psucontrol.js"],
-            "less": ["less/psucontrol.less"],
-            "css": ["css/psucontrol.min.css"]
+            "js": ["js/fancontrol.js"],
+            "less": ["less/fancontrol.less"],
+            "css": ["css/fancontrol.min.css"]
 
         } 
 
     def get_update_information(self):
         return dict(
-            psucontrol=dict(
-                displayName="PSU Control",
+            fancontrol=dict(
+                displayName="fan Control",
                 displayVersion=self._plugin_version,
 
                 # version check: github repository
                 type="github_release",
                 user="kantlivelong",
-                repo="OctoPrint-PSUControl",
+                repo="OctoPrint-fanControl",
                 current=self._plugin_version,
 
                 # update method: pip w/ dependency links
-                pip="https://github.com/kantlivelong/OctoPrint-PSUControl/archive/{target_version}.zip"
+                pip="https://github.com/kantlivelong/OctoPrint-fanControl/archive/{target_version}.zip"
             )
         )
 
-__plugin_name__ = "PSU Control"
+__plugin_name__ = "fan Control"
 __plugin_pythoncompat__ = ">=2.7,<4"
 
 def __plugin_load__():
     global __plugin_implementation__
-    __plugin_implementation__ = PSUControl()
+    __plugin_implementation__ = fanControl()
 
     global __plugin_hooks__
     __plugin_hooks__ = {
